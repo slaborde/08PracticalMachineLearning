@@ -1,0 +1,142 @@
+---
+title: "Project Practical Machine Learning"
+date: "Friday, February 22, 2015"
+output: html_document
+---
+
+##Synopsis
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+The goal of this project is to predict the manner in which the participants did the exercise. This is the “classe” variable in the training set.
+
+##Methodology
+
+I will address the following steps:
+
+1. Question
+2. Input Data
+3. Cross Validation
+4. Model Specification
+5. Evaluation 
+
+###Question
+
+Six participants participated in a dumbell lifting exercise five different ways. The five ways, as described in the study, were “exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes.”
+
+By processing data gathered from accelerometers on the belt, forearm, arm, and dumbell of the participants in a machine learning algorithm, the question is can the appropriate activity quality (class A-E) be predicted ??
+
+###Input Data
+
+First load the training and test data provided trating empty values as NAs values. Then clean the data removing columns:
+
+1. With NA values (columns with NAs values has more than 85% of NAs).
+2. Non-numeric Variables
+3. Near-Zero Values
+
+The provided training set has 19.622 observations so we split the original training data in a new training set (60%) for perform cross validation and a test set (40%) put aside.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+```
+
+```{r}
+training <- read.csv("pml-training.csv" , na.strings=c("","NA"), header = TRUE)
+testing <- read.csv("pml-testing.csv", na.strings=c("","NA"), header = TRUE)
+
+#Remove NAs values
+trainR <- training[,which(as.numeric(colSums(is.na(training))) == 0)]
+testingR <- testing[,which(as.numeric(colSums(is.na(testing))) == 0)]
+#Remove Non-Numeric Variables
+trainR <- trainR[,-(1:7)]
+testingR <- testingR[,-(1:7)]
+
+#Remove Near Zero Values
+end <- ncol(trainR)
+trainR[,-end] <- data.frame(sapply(trainR[,-end], as.numeric))
+nzv <- nearZeroVar(trainR[, -end], saveMetrics = TRUE)
+trainR <- trainR[,!as.logical(nzv$nzv)]
+
+end <- ncol(testingR)
+testingR[,-end] <- data.frame(sapply(testingR[,-end], as.numeric))
+nzv <- nearZeroVar(testingR[, -end], saveMetrics = TRUE)
+testingR <- testingR[,!as.logical(nzv$nzv)]
+
+set.seed(33835)
+inTrain <- createDataPartition(trainR$classe, p = 0.6, list = FALSE)
+train <- trainR[inTrain,]
+test <- trainR[-inTrain,]
+```
+
+##Cross Validation
+
+In order to avoid overfitting and to reduce out of sample errors, TrainControl is used to perform 4-fold cross validation.
+
+```{r}
+tc <- trainControl(method = "cv", number = 7, repeats = 7 , preProcOptions = "pca", allowParallel = TRUE)
+```
+
+####Model Specification
+
+We built and compared two models using decision tree and random forest algorithms. 
+
+**First Model: Decision Tree**
+```{r, cache=TRUE, warning=FALSE}
+treeModel <- train(classe ~ ., data = train, method = "rpart", trControl = tc)
+fancyRpartPlot(treeModel$finalModel)
+```
+
+**Second Model: Random Forest**
+
+```{r, cache=TRUE, warning=FALSE}
+randForestModel <- train(classe ~ ., data = train, method = "rf", trControl = tc, prox = TRUE, allowParallel = TRUE,
+                         ntree = 2)
+```
+
+###Conclusion
+
+Random Forest algorithm performed better than Decision Trees.
+Accuracy for Random Forest model was 0.9279 (95% CI: (0.9219, 0.9335) compared to 0.4873 (95% CI: (0.4761, 0.4984)) for Decision Tree model.
+
+The random Forest model is choosen. The accuracy of the model is 0.9279. The expected out-of-sample error is estimated at 0.005, or 0.5%. The expected out-of-sample error is calculated as 1 - accuracy for predictions made against the cross-validation set.
+
+```{r}
+predictionTree <- predict(treeModel, newdata = test)
+confusionMatrix(predictionTree, test$classe)
+
+predictionRandForest <- predict(randForestModel, newdata = test)
+confusionMatrix(predictionRandForest, test$classe)
+```
+
+
+###Evaluation
+
+Our Test data set comprises 20 cases. With an accuracy above 99% on our cross-validation data, we can expect that very few, or none, of the test samples will be missclassified.
+
+```{r, echo=FALSE}
+#Writing files for submission
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```
+
+```{r}
+predictionRandForestFinal <- predict(randForestModel, newdata = testingR)
+predictionRandForestFinal
+pml_write_files(predictionRandForestFinal)
+```
+
+
+
+
